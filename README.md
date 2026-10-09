@@ -40,26 +40,124 @@ tables, roles) is a self-contained block marked "copy this block."
   Data Feed" preview, and the running identity needs `USE CATALOG` / `USE SCHEMA`
   / `CREATE TABLE` on the destination catalog and schema.
 
-## Quick start
+## Configure it (step by step)
+
+All configuration is in two places:
+- **`databricks.yml`** holds the scalar knobs (host, sizing, HA, DR, names) as
+  variables, plus the per-environment `targets`.
+- **`resources/*.yml`** holds the collections (which synced tables, which roles)
+  as copy-paste blocks.
+
+### Step 1: Point it at your workspace
+
+In `databricks.yml`, each target has a `workspace.host` with a `CHANGE-ME`
+placeholder. Replace it with your workspace URL:
+
+```yaml
+targets:
+  dev:
+    workspace:
+      host: https://your-workspace.cloud.databricks.com   # <-- edit this
+```
+
+Alternatively, leave the placeholder and pass a CLI profile at deploy time:
+`databricks bundle deploy -t dev -p your-profile`.
+
+### Step 2: Set the main knobs
+
+Also in `databricks.yml`, under `variables:`. Edit the value after `default:`:
+
+```yaml
+variables:
+  project_name:        { default: lakebase-demo }        # Lakebase project id
+  catalog_name:        { default: lakebase_demo_catalog } # Unity Catalog name
+  database_name:       { default: databricks_postgres }   # Postgres database
+  endpoint_min_cu:     { default: 0.5 }   # sizing: autoscale floor (min 0.5)
+  endpoint_max_cu:     { default: 1 }     # sizing: autoscale ceiling
+  node_count:          { default: 1 }     # HA: 1 = single, 2+ = highly available
+  enable_readable_secondaries: { default: false }  # HA: read replicas
+  history_retention:   { default: "604800s" }  # DR: PITR window (7 days)
+  branch_protected:    { default: false }       # DR: block deletion/reset
+```
+
+(See the full variable reference table below for every knob.)
+
+### Step 3: Tune each environment (targets)
+
+The `targets:` block overrides those variables for `dev` / `stage` / `prod`.
+This is how one bundle gives you a small dev and a hardened prod. Edit the
+numbers to change sizing or the HA/DR posture per environment:
+
+```yaml
+  prod:
+    workspace:
+      host: https://your-prod-workspace.cloud.databricks.com
+    variables:
+      endpoint_min_cu: 1
+      endpoint_max_cu: 4
+      node_count: 2
+      enable_readable_secondaries: true
+      branch_protected: true
+      history_retention: "1209600s"   # 14 days
+```
+
+### Step 4: Configure the serving tables (Delta to Lakebase)
+
+Edit `resources/synced_tables.yml`. Each block is one Delta table synced into
+Postgres. **To add one, copy a block** and set these fields:
+
+```yaml
+    orders:                                              # unique key
+      synced_table_id: ${var.catalog_name}.public.orders # destination name
+      source_table_full_name: main.retail.orders         # your 3-part Delta source
+      primary_key_columns:
+        - order_id
+      scheduling_policy: CONTINUOUS   # SNAPSHOT | TRIGGERED | CONTINUOUS
+```
+
+Use `CONTINUOUS` for low-latency CDC. That requires change data feed on the
+source Delta table:
+
+```sql
+ALTER TABLE main.retail.orders SET TBLPROPERTIES (delta.enableChangeDataFeed = true);
+```
+
+### Step 5: Configure who can connect (roles)
+
+Edit `resources/roles.yml`. **Copy a block** per identity:
+
+```yaml
+    analyst:
+      role_id: analyst                           # unique id (lowercase, hyphens)
+      postgres_role: "someone@yourcompany.com"   # user email, SP app id, or group name
+      identity_type: USER                        # USER | SERVICE_PRINCIPAL | GROUP
+      auth_method: LAKEBASE_OAUTH_V1
+```
+
+### Step 6: Configure change-capture out of Postgres (optional)
+
+The Lakebase CDF variables in `databricks.yml` control the capture job
+(Postgres changes into Delta):
+
+```yaml
+  source_schema:    { default: public }                  # which PG schema to capture
+  cdf_dest_catalog: { default: lakebase_demo_catalog }   # where Delta history lands
+  cdf_dest_schema:  { default: lakebase_cdf }
+```
+
+## Deploy
 
 ```bash
-# 1. Set the workspace host in each target in databricks.yml (the CHANGE-ME lines),
-#    or skip that and pass a CLI profile with -p <profile>.
-
-# 2. Validate.
-databricks bundle validate -t dev
-
-# 3. Deploy.
-databricks bundle deploy -t dev        # or: -t stage / -t prod
-
-# 4. (Optional) Enable Lakebase CDF.
-databricks bundle run enable_cdf_job -t dev
+cd lakebase-dab
+databricks bundle validate -t dev     # catch config errors
+databricks bundle deploy   -t dev     # create everything (or -t stage / -t prod)
+databricks bundle run enable_cdf_job -t dev   # optional: turn on Lakebase CDF
 ```
 
 Tear down with `databricks bundle destroy -t dev`. By default the project is
 soft-deleted and retained for 7 days.
 
-## The knobs (variables)
+## Variable reference
 
 All in `databricks.yml`. Targets override them; defaults are a small dev instance.
 
@@ -75,7 +173,7 @@ All in `databricks.yml`. Targets override them; defaults are a small dev instanc
 | `pipeline_storage_catalog`, `pipeline_storage_schema` | Standard UC location for synced-table pipeline checkpoints | **Synced tables** |
 | `source_schema`, `cdf_dest_catalog`, `cdf_dest_schema` | Lakebase CDF source schema and Delta destination | **Lakebase CDF** |
 
-### Target escalation
+### Target escalation (the defaults shipped in this bundle)
 
 | Knob | dev | stage | prod |
 |---|---|---|---|
@@ -84,23 +182,6 @@ All in `databricks.yml`. Targets override them; defaults are a small dev instanc
 | readable secondaries | off | off | on |
 | branch protected | off | off | on |
 | retention | 7 days | 7 days | 14 days |
-
-## How to customize
-
-**Add a synced table:** copy a block in `resources/synced_tables.yml`, give it a
-unique key, and set `source_table_full_name`, `primary_key_columns`, and
-`scheduling_policy`. Use `CONTINUOUS` for low-latency CDC; the source Delta
-table must have CDF on:
-
-```sql
-ALTER TABLE <catalog>.<schema>.<table> SET TBLPROPERTIES (delta.enableChangeDataFeed = true);
-```
-
-**Add a role:** copy a block in `resources/roles.yml`, set a unique `role_id`,
-`postgres_role` (user email / SP application id / group name), `identity_type`,
-and `auth_method`.
-
-**Change size / HA / DR:** edit the variables per target in `databricks.yml`.
 
 ## Lakebase CDF: job vs. CLI
 
