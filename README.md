@@ -36,6 +36,10 @@ tables, roles) is a self-contained block marked "copy this block."
   need 1.0.0+; projects need 0.287.0+). Check with `databricks -v`.
 - Authentication to your workspace: `databricks auth login --host <url> --profile <name>`.
 - `CAN MANAGE` on Lakebase projects.
+- **`CREATE CATALOG` on the metastore** (metastore-admin privilege) for the
+  `postgres_catalogs` registration, and therefore for synced tables. Without it,
+  that step fails with `PERMISSION_DENIED: User does not have CREATE CATALOG`.
+  If you lack it, have an admin run the catalog step or grant you the privilege.
 - For **Lakebase CDF** only: a workspace admin must enable the "Lakebase Change
   Data Feed" preview, and the running identity needs `USE CATALOG` / `USE SCHEMA`
   / `CREATE TABLE` on the destination catalog and schema.
@@ -208,7 +212,22 @@ captured. Destination tables appear as `cdf_dest_catalog.cdf_dest_schema.lb_<tab
 
 - The project auto-creates the `production` branch and `primary` endpoint;
   this bundle adopts both with `replace_existing: true`.
+- **Roles map one Postgres role per identity.** The project owner already has an
+  auto-created role on the branch, so do not add a `postgres_roles` entry that
+  points at the owner's identity (it fails with "role with that name already
+  exists"). Add roles for *other* users, service principals, or groups.
+- Registering the catalog needs `CREATE CATALOG` on the metastore (see
+  Prerequisites). Core infra (project, branch, endpoint, roles, CDF job) does not.
 - `workspace.host` cannot use variables, so it is set literally per target.
 - Lakebase DAB support is Beta; pin your CLI version and test in dev first.
 - Autoscaling scale-to-zero is governed by endpoint suspension (on by default);
   `endpoint_min_cu` is the warm floor when active.
+
+## Validation status
+
+Deployed and verified against a live FE-VM Lakebase workspace with Databricks
+CLI v1.17.0: project, production branch (adopted), primary endpoint (reached
+`ACTIVE`), and the CDF job all create and tear down cleanly via `bundle deploy` /
+`bundle destroy`. Catalog registration and synced tables were **not** exercised
+on that workspace because the test identity lacked `CREATE CATALOG`; validate
+those on a workspace where you hold that privilege before relying on them.
