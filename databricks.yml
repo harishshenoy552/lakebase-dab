@@ -1,0 +1,145 @@
+# =============================================================================
+# Generic Lakebase Databricks Asset Bundle (DAB)
+# -----------------------------------------------------------------------------
+# Deploys a Lakebase (Autoscaling Postgres) project with:
+#   - project + production branch + primary read/write endpoint   (resources/lakebase.yml)
+#   - a Unity Catalog registration over the Postgres database      (resources/lakebase.yml)
+#   - identity-aware Postgres roles                                (resources/roles.yml)
+#   - synced tables (Delta -> Lakebase): SNAPSHOT + CONTINUOUS/CDC (resources/synced_tables.yml)
+#   - a job that enables Lakebase CDF (Lakebase -> Delta)          (resources/cdf_job.yml)
+#
+# HOW TO USE
+#   1. Set your workspace host in each target below (or use -p <profile>).
+#   2. Edit the variables below (or override per target).
+#   3. databricks bundle validate -t dev
+#   4. databricks bundle deploy   -t dev        # or stage / prod
+#
+# This file holds the knobs. The resource shapes live in resources/*.yml so
+# they are easy to read and copy. To add a synced table or role, copy a block
+# in the matching resources file (each is marked "copy this block").
+#
+# Requires Databricks CLI >= 1.0.0 (postgres_catalogs + postgres_synced_tables).
+# =============================================================================
+
+bundle:
+  name: lakebase-dab
+
+include:
+  - resources/*.yml
+
+# -----------------------------------------------------------------------------
+# Variables: every per-environment knob. Defaults match a small "dev" instance.
+# Targets below override them for stage / prod.
+# -----------------------------------------------------------------------------
+variables:
+  # --- Project identity ---
+  project_name:
+    description: Lakebase project id. 1-63 chars, lowercase letters, numbers, hyphens.
+    default: lakebase-demo
+  project_display_name:
+    description: Human-readable project name.
+    default: Lakebase Demo
+  pg_version:
+    description: Major Postgres version (16, 17, or 18).
+    default: 17
+
+  # --- Disaster recovery (DR) ---
+  history_retention:
+    description: >-
+      Point-in-time-recovery window for all branches, as a seconds duration string.
+      Allowed 172800s (2 days) to 3024000s (35 days).
+      172800s=2d  604800s=7d  1209600s=14d  3024000s=35d
+    default: "604800s"
+  branch_protected:
+    description: Protect the production branch from deletion/reset (recommended in prod).
+    default: false
+
+  # --- Size management (autoscale) ---
+  endpoint_min_cu:
+    description: Autoscale floor in Compute Units. Minimum 0.5.
+    default: 0.5
+  endpoint_max_cu:
+    description: Autoscale ceiling in CU. (max - min) must be <= 16; max <= 64.
+    default: 1
+
+  # --- High availability (HA) ---
+  node_count:
+    description: >-
+      Compute group size. 1 = single compute (default). Set >= 2 for HA.
+      The endpoint group min and max are both set to this value (they must be equal).
+    default: 1
+  enable_readable_secondaries:
+    description: Allow read-only connections on the RW endpoint (read scaling). Set node_count >= 2.
+    default: false
+
+  # --- Catalog + database ---
+  catalog_name:
+    description: Unity Catalog catalog registered over the Lakebase database.
+    default: lakebase_demo_catalog
+  database_name:
+    description: Postgres database name inside the project (a valid Postgres identifier).
+    default: databricks_postgres
+
+  # --- Synced-table pipeline storage (must be a STANDARD UC catalog, not the Lakebase one) ---
+  pipeline_storage_catalog:
+    description: Standard UC catalog where synced-table pipelines keep checkpoints/event logs.
+    default: main
+  pipeline_storage_schema:
+    description: Schema inside pipeline_storage_catalog for pipeline metadata.
+    default: lakebase_pipeline
+
+  # --- Lakebase CDF (Lakebase -> Delta) job targets ---
+  source_schema:
+    description: Postgres schema to capture with Lakebase CDF.
+    default: public
+  cdf_dest_catalog:
+    description: Destination UC catalog for the CDF Delta history tables.
+    default: lakebase_demo_catalog
+  cdf_dest_schema:
+    description: Destination UC schema for the CDF Delta history tables.
+    default: lakebase_cdf
+
+# -----------------------------------------------------------------------------
+# Targets: dev -> stage -> prod. Capacity, HA, and protection escalate.
+# Deploy with:  databricks bundle deploy -t <target>
+# -----------------------------------------------------------------------------
+# NOTE: workspace.host does not support variable interpolation, so it is set
+# literally per target. Replace the placeholder with your workspace URL, or
+# omit the workspace block entirely and select a CLI profile with -p <profile>.
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://CHANGE-ME-dev.cloud.databricks.com
+    variables:
+      project_name: lakebase-demo-dev
+      endpoint_min_cu: 0.5
+      endpoint_max_cu: 1
+      node_count: 1
+      enable_readable_secondaries: false
+      branch_protected: false
+      history_retention: "604800s"
+
+  stage:
+    workspace:
+      host: https://CHANGE-ME-stage.cloud.databricks.com
+    variables:
+      project_name: lakebase-demo-stage
+      endpoint_min_cu: 0.5
+      endpoint_max_cu: 2
+      node_count: 1
+      enable_readable_secondaries: false
+      branch_protected: false
+      history_retention: "604800s"
+
+  prod:
+    workspace:
+      host: https://CHANGE-ME-prod.cloud.databricks.com
+    variables:
+      project_name: lakebase-demo-prod
+      endpoint_min_cu: 1
+      endpoint_max_cu: 4
+      node_count: 2
+      enable_readable_secondaries: true
+      branch_protected: true
+      history_retention: "1209600s"

@@ -1,0 +1,40 @@
+# =============================================================================
+# Identity-aware Postgres roles.
+#
+# Each role maps a Databricks identity (USER, SERVICE_PRINCIPAL, or GROUP) to a
+# Postgres role. With LAKEBASE_OAUTH_V1 there are no static passwords: callers
+# authenticate with short-lived OAuth tokens.
+#
+# Fields:
+#   role_id        resource id (4-63 chars, lowercase letters/numbers/hyphens)
+#   postgres_role  the actual identity: user email, SP application id, or group name
+#   identity_type  USER | SERVICE_PRINCIPAL | GROUP
+#   auth_method    LAKEBASE_OAUTH_V1 | PG_PASSWORD_SCRAM_SHA_256 | NO_LOGIN
+#
+# TO ADD A ROLE: copy one block below, give it a unique key + role_id, and set
+# postgres_role / identity_type / auth_method.
+# =============================================================================
+resources:
+  postgres_roles:
+
+    # ---- A human analyst, OAuth login (read access granted separately in UC/SQL) ----
+    analyst:
+      parent: ${resources.postgres_branches.production.id}
+      role_id: analyst
+      postgres_role: "analyst@example.com"      # <-- replace with the user's Databricks email
+      identity_type: USER
+      auth_method: LAKEBASE_OAUTH_V1
+      replace_existing: true
+
+    # ---- A service principal for application connections ----
+    app-sp:
+      parent: ${resources.postgres_branches.production.id}
+      role_id: app-sp
+      postgres_role: "00000000-0000-0000-0000-000000000000"   # <-- SP application (client) id
+      identity_type: SERVICE_PRINCIPAL
+      auth_method: LAKEBASE_OAUTH_V1
+      replace_existing: true
+      # Optional Postgres attributes:
+      # attributes:
+      #   createdb: true
+      #   createrole: false

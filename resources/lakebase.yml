@@ -1,0 +1,64 @@
+# =============================================================================
+# Core Lakebase infrastructure: project -> branch -> endpoint, plus the
+# database registration in Unity Catalog.
+#
+# Lakebase automatically creates a "production" branch and a "primary"
+# read/write endpoint when the project is created. We declare both here with
+# replace_existing: true so the bundle ADOPTS and manages those auto-created
+# resources instead of failing with ALREADY_EXISTS.
+# =============================================================================
+resources:
+
+  # --- Lakebase project (top-level container) ---------------------------------
+  postgres_projects:
+    lakebase:
+      project_id: ${var.project_name}
+      display_name: ${var.project_display_name}
+      pg_version: ${var.pg_version}
+      # Disaster recovery: shared point-in-time-recovery history for all branches.
+      history_retention_duration: ${var.history_retention}
+      # Uncomment to allow Postgres-native (static password) role logins:
+      # enable_pg_native_login: true
+      #
+      # Prevent accidental teardown of a production project:
+      # lifecycle:
+      #   prevent_destroy: true
+
+  # --- Production branch (adopted) --------------------------------------------
+  postgres_branches:
+    production:
+      parent: ${resources.postgres_projects.lakebase.id}
+      branch_id: production
+      no_expiry: true
+      # Disaster recovery: protect prod from deletion/reset (set per target).
+      is_protected: ${var.branch_protected}
+      replace_existing: true
+
+  # --- Primary read/write endpoint (adopted) ----------------------------------
+  postgres_endpoints:
+    primary:
+      parent: ${resources.postgres_branches.production.id}
+      endpoint_id: primary
+      endpoint_type: ENDPOINT_TYPE_READ_WRITE
+      # Size management: autoscale range in Compute Units.
+      autoscaling_limit_min_cu: ${var.endpoint_min_cu}
+      autoscaling_limit_max_cu: ${var.endpoint_max_cu}
+      replace_existing: true
+      # High availability: min and max must be equal (= node_count).
+      # node_count 1 is a single compute; >= 2 enables HA. Readable secondaries
+      # add read-only capacity on the RW endpoint.
+      group:
+        min: ${var.node_count}
+        max: ${var.node_count}
+        enable_readable_secondaries: ${var.enable_readable_secondaries}
+
+  # --- Unity Catalog registration over the Postgres database ------------------
+  # Registering a catalog lets you query the Lakebase database from Databricks
+  # SQL/notebooks and gives synced tables a 3-part UC destination name.
+  # create_database_if_missing creates the Postgres database if it is not there.
+  postgres_catalogs:
+    app_catalog:
+      branch: ${resources.postgres_branches.production.id}
+      catalog_id: ${var.catalog_name}
+      postgres_database: ${var.database_name}
+      create_database_if_missing: true

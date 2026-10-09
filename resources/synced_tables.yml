@@ -1,0 +1,52 @@
+# =============================================================================
+# Synced tables: continuously replicate a Unity Catalog Delta table INTO
+# Lakebase Postgres for low-latency serving.  Direction: Delta -> Lakebase.
+#
+# scheduling_policy:
+#   SNAPSHOT    periodic full refresh (simplest, good for slowly-changing data)
+#   TRIGGERED   refresh only when the pipeline is triggered
+#   CONTINUOUS  low-latency incremental sync; reads the SOURCE Delta table's
+#               Change Data Feed. The source Delta table must have CDF enabled:
+#                 ALTER TABLE <src> SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
+#
+# synced_table_id is the 3-part Unity Catalog DESTINATION name. Because we
+# registered ${var.catalog_name} over the Lakebase database, destinations live
+# under that catalog.
+#
+# new_pipeline_spec.storage_catalog/schema must be a STANDARD UC catalog (not
+# the Lakebase catalog); it holds pipeline checkpoints and event logs.
+#
+# TO ADD A SYNCED TABLE: copy one block below, give it a unique key, set the
+# source_table_full_name, primary_key_columns, and scheduling_policy.
+# =============================================================================
+resources:
+  postgres_synced_tables:
+
+    # ---- SNAPSHOT example: periodic full refresh ----
+    customers:
+      branch: ${resources.postgres_branches.production.id}
+      postgres_database: ${var.database_name}
+      synced_table_id: ${var.catalog_name}.public.customers
+      source_table_full_name: main.retail.customers        # <-- 3-part Delta source table
+      primary_key_columns:
+        - customer_id
+      scheduling_policy: SNAPSHOT
+      create_database_objects_if_missing: true
+      new_pipeline_spec:
+        storage_catalog: ${var.pipeline_storage_catalog}
+        storage_schema: ${var.pipeline_storage_schema}
+
+    # ---- CONTINUOUS example: low-latency CDC from the source Delta Change Data Feed ----
+    orders:
+      branch: ${resources.postgres_branches.production.id}
+      postgres_database: ${var.database_name}
+      synced_table_id: ${var.catalog_name}.public.orders
+      source_table_full_name: main.retail.orders           # <-- source Delta table MUST have CDF enabled
+      primary_key_columns:
+        - order_id
+      timeseries_key: updated_at                           # tie-break rows with the same primary key
+      scheduling_policy: CONTINUOUS
+      create_database_objects_if_missing: true
+      new_pipeline_spec:
+        storage_catalog: ${var.pipeline_storage_catalog}
+        storage_schema: ${var.pipeline_storage_schema}

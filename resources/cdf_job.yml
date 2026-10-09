@@ -1,0 +1,38 @@
+# =============================================================================
+# Lakebase Change Data Feed (CDF) enabler job.   Direction: Lakebase -> Delta.
+#
+# Lakebase CDF captures every insert/update/delete on a Postgres schema (from
+# the write-ahead log) into open-format Delta "lb_<table>_history" tables in
+# Unity Catalog. It is a schema-level feature and has NO declarative bundle
+# resource, so this job turns it on programmatically after deploy.
+#
+# PREREQUISITES (see README):
+#   - A workspace admin has enabled the "Lakebase Change Data Feed" preview.
+#   - The running identity has USE CATALOG / USE SCHEMA / CREATE TABLE on the
+#     destination catalog+schema, and CAN MANAGE on the Lakebase project.
+#   - Source tables have REPLICA IDENTITY FULL (the notebook prints the SQL).
+#
+# RUN IT:  databricks bundle run enable_cdf_job -t dev
+# =============================================================================
+resources:
+  jobs:
+    enable_cdf_job:
+      name: "[${bundle.target}] Enable Lakebase CDF - ${var.project_name}"
+      tasks:
+        - task_key: enable_cdf
+          notebook_task:
+            notebook_path: ../src/enable_lakebase_cdf.py
+            base_parameters:
+              project_id: ${var.project_name}
+              branch_id: production
+              database_name: ${var.database_name}
+              source_schema: ${var.source_schema}
+              dest_catalog: ${var.cdf_dest_catalog}
+              dest_schema: ${var.cdf_dest_schema}
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+      queue:
+        enabled: true

@@ -1,0 +1,6 @@
+.databricks/
+*.tfstate
+*.tfstate.*
+.vscode/
+__pycache__/
+*.pyc
