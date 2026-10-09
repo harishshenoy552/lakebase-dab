@@ -242,9 +242,17 @@ captured. Destination tables appear as `cdf_dest_catalog.cdf_dest_schema.lb_<tab
 
 ## Validation status
 
-Deployed and verified against a live FE-VM Lakebase workspace with Databricks
-CLI v1.17.0: project, production branch (adopted), primary endpoint (reached
-`ACTIVE`), and the CDF job all create and tear down cleanly via `bundle deploy` /
-`bundle destroy`. Catalog registration and synced tables were **not** exercised
-on that workspace because the test identity lacked `CREATE CATALOG`; validate
-those on a workspace where you hold that privilege before relying on them.
+Validated end-to-end on a live FE-VM Lakebase workspace (Databricks CLI
+v1.17.0), with a clean `bundle deploy` then `bundle destroy`:
+
+- **Core infra:** project, production branch (adopted), primary endpoint
+  (reached `ACTIVE`), and the CDF job created and destroyed cleanly.
+- **Synced tables (Delta to Lakebase):** a SNAPSHOT table and a CONTINUOUS table
+  deployed via existing-catalog mode; the Lakebase Postgres tables matched the
+  source Delta tables row-for-row.
+- **Catalog:** register mode (`postgres_catalogs`) needs `CREATE CATALOG` on the
+  metastore. On a Default-Storage metastore, use existing-catalog mode (above),
+  which needs only `CREATE TABLE` on the target schema. Both paths confirmed.
+- **Lakebase CDF:** requires the workspace "Lakebase Change Data Feed" preview to
+  be enabled by an admin. Until then the CDF API returns `No API found`; the
+  bundle job and the `create-cdf-config` CLI call are otherwise correct.
