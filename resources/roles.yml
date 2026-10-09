@@ -13,6 +13,10 @@
 #
 # TO ADD A ROLE: copy one block below, give it a unique key + role_id, and set
 # postgres_role / identity_type / auth_method.
+#
+# NOTE: one Postgres role per identity. The project owner already has an
+# auto-created role, so do not point a role here at the owner's identity (it
+# fails with "role with that name already exists"). Use other users/SPs/groups.
 # =============================================================================
 resources:
   postgres_roles:

@@ -9,9 +9,13 @@
 #               Change Data Feed. The source Delta table must have CDF enabled:
 #                 ALTER TABLE <src> SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
 #
-# synced_table_id is the 3-part Unity Catalog DESTINATION name. Because we
-# registered ${var.catalog_name} over the Lakebase database, destinations live
-# under that catalog.
+# synced_table_id is the 3-part Unity Catalog DESTINATION name:
+#   ${var.catalog_name}.${var.catalog_schema}.<table>
+# This works in BOTH catalog modes: in REGISTER mode catalog_name is the catalog
+# this bundle creates; in EXISTING-CATALOG mode set catalog_name/catalog_schema to
+# the already-registered Lakebase catalog + schema (and delete the postgres_catalogs
+# block in resources/lakebase.yml). The catalog must be a Lakebase catalog
+# registered over THIS project's database.
 #
 # new_pipeline_spec.storage_catalog/schema must be a STANDARD UC catalog (not
 # the Lakebase catalog); it holds pipeline checkpoints and event logs.
@@ -26,7 +30,7 @@ resources:
     customers:
       branch: ${resources.postgres_branches.production.id}
       postgres_database: ${var.database_name}
-      synced_table_id: ${var.catalog_name}.public.customers
+      synced_table_id: ${var.catalog_name}.${var.catalog_schema}.customers
       source_table_full_name: main.retail.customers        # <-- 3-part Delta source table
       primary_key_columns:
         - customer_id
@@ -40,7 +44,7 @@ resources:
     orders:
       branch: ${resources.postgres_branches.production.id}
       postgres_database: ${var.database_name}
-      synced_table_id: ${var.catalog_name}.public.orders
+      synced_table_id: ${var.catalog_name}.${var.catalog_schema}.orders
       source_table_full_name: main.retail.orders           # <-- source Delta table MUST have CDF enabled
       primary_key_columns:
         - order_id

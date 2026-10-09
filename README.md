@@ -105,15 +105,32 @@ numbers to change sizing or the HA/DR posture per environment:
       history_retention: "1209600s"   # 14 days
 ```
 
-### Step 4: Configure the serving tables (Delta to Lakebase)
+### Step 4: Pick a catalog mode (new vs. existing)
+
+Synced tables land in a Unity Catalog catalog registered over the Postgres
+database. Choose one mode:
+
+- **Register a new catalog (default):** keep the `postgres_catalogs` block in
+  `resources/lakebase.yml` and set `catalog_name`. Requires `CREATE CATALOG` on
+  the metastore.
+- **Use an existing catalog:** if a Lakebase catalog is already registered over
+  this project's database, **delete the `postgres_catalogs` block** in
+  `resources/lakebase.yml` and set `catalog_name` (and `catalog_schema` if not
+  `public`) to that catalog. No `CREATE CATALOG` privilege needed. The bundle
+  cannot adopt an existing catalog (`postgres_catalogs` has no `replace_existing`),
+  so you reference it rather than declare it.
+
+Either way, `catalog_name` / `catalog_schema` drive the synced-table destination.
+
+### Step 5: Configure the serving tables (Delta to Lakebase)
 
 Edit `resources/synced_tables.yml`. Each block is one Delta table synced into
 Postgres. **To add one, copy a block** and set these fields:
 
 ```yaml
-    orders:                                              # unique key
-      synced_table_id: ${var.catalog_name}.public.orders # destination name
-      source_table_full_name: main.retail.orders         # your 3-part Delta source
+    orders:                                                            # unique key
+      synced_table_id: ${var.catalog_name}.${var.catalog_schema}.orders # destination name
+      source_table_full_name: main.retail.orders                       # your 3-part Delta source
       primary_key_columns:
         - order_id
       scheduling_policy: CONTINUOUS   # SNAPSHOT | TRIGGERED | CONTINUOUS
@@ -126,7 +143,7 @@ source Delta table:
 ALTER TABLE main.retail.orders SET TBLPROPERTIES (delta.enableChangeDataFeed = true);
 ```
 
-### Step 5: Configure who can connect (roles)
+### Step 6: Configure who can connect (roles)
 
 Edit `resources/roles.yml`. **Copy a block** per identity:
 
@@ -138,7 +155,7 @@ Edit `resources/roles.yml`. **Copy a block** per identity:
       auth_method: LAKEBASE_OAUTH_V1
 ```
 
-### Step 6: Configure change-capture out of Postgres (optional)
+### Step 7: Configure change-capture out of Postgres (optional)
 
 The Lakebase CDF variables in `databricks.yml` control the capture job
 (Postgres changes into Delta):

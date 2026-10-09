@@ -53,9 +53,14 @@ resources:
         enable_readable_secondaries: ${var.enable_readable_secondaries}
 
   # --- Unity Catalog registration over the Postgres database ------------------
-  # Registering a catalog lets you query the Lakebase database from Databricks
-  # SQL/notebooks and gives synced tables a 3-part UC destination name.
-  # create_database_if_missing creates the Postgres database if it is not there.
+  # REGISTER MODE: this block creates a NEW UC catalog over the database so you
+  # can query Lakebase from Databricks SQL/notebooks and so synced tables have a
+  # 3-part UC destination. It requires CREATE CATALOG on the metastore.
+  #
+  # EXISTING-CATALOG MODE: if a Lakebase catalog is ALREADY registered over this
+  # project's database, DELETE this entire postgres_catalogs block and set
+  # var.catalog_name to that existing catalog. You then do not need CREATE CATALOG.
+  # (postgres_catalogs has no replace_existing, so it cannot adopt one.)
   postgres_catalogs:
     app_catalog:
       branch: ${resources.postgres_branches.production.id}

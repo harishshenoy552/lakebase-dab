@@ -73,9 +73,17 @@ variables:
     default: false
 
   # --- Catalog + database ---
+  # Two catalog modes (see resources/lakebase.yml and the README):
+  #   REGISTER (default): the postgres_catalogs block creates this catalog over the
+  #     database. Requires CREATE CATALOG on the metastore.
+  #   EXISTING: set catalog_name to a catalog ALREADY registered over this project's
+  #     database and DELETE the postgres_catalogs block. No CREATE CATALOG needed.
   catalog_name:
-    description: Unity Catalog catalog registered over the Lakebase database.
+    description: UC catalog over the Lakebase database (created in REGISTER mode, or an existing one).
     default: lakebase_demo_catalog
+  catalog_schema:
+    description: Schema inside the catalog where synced tables are created.
+    default: public
   database_name:
     description: Postgres database name inside the project (a valid Postgres identifier).
     default: databricks_postgres
